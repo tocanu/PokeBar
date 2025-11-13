@@ -1,0 +1,27 @@
+# Build artifacts
+bin/
+obj/
+
+# VS/VSCode
+.vs/
+.vscode/
+
+# User-specific
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Rider/JetBrains
+.idea/
+
+# Publish output
+publish/
+
