@@ -1,6 +1,6 @@
 namespace PokeBar.Models;
 
-public class Pokemon
+public record class Pokemon
 {
     public string Name { get; set; } = "Slakoth";
     public int DexNumber { get; set; } = 287;
@@ -11,17 +11,7 @@ public class Pokemon
     public int Defense { get; set; } = 10;
     public int Speed { get; set; } = 10;
 
-    public Pokemon Clone() => new()
-    {
-        Name = Name,
-        DexNumber = DexNumber,
-        Level = Level,
-        MaxHP = MaxHP,
-        CurrentHP = CurrentHP,
-        Attack = Attack,
-        Defense = Defense,
-        Speed = Speed,
-    };
+    public Pokemon Copy() => this with { };
 
     public void HealFull() => CurrentHP = MaxHP;
 }

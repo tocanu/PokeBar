@@ -1,8 +1,10 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PokeBar", "PokeBar.csproj", "{0E9A29D8-0CCC-84F3-5A3A-315C76B4E82B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PokeBar.Tests", "Tests\PokeBar.Tests.csproj", "{3908B440-0E72-4F47-B77C-C9E8D28533C2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,6 +16,10 @@ Global
 		{0E9A29D8-0CCC-84F3-5A3A-315C76B4E82B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0E9A29D8-0CCC-84F3-5A3A-315C76B4E82B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0E9A29D8-0CCC-84F3-5A3A-315C76B4E82B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3908B440-0E72-4F47-B77C-C9E8D28533C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3908B440-0E72-4F47-B77C-C9E8D28533C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3908B440-0E72-4F47-B77C-C9E8D28533C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3908B440-0E72-4F47-B77C-C9E8D28533C2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

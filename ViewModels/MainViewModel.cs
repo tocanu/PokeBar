@@ -5,22 +5,28 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using PokeBar.Models;
 using PokeBar.Services;
 using PokeBar.Utils;
 
 namespace PokeBar.ViewModels;
 
-public class MainViewModel : INotifyPropertyChanged
+public class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private const double WindowWidth = 64;
     private const double WindowHeight = 96;
     private readonly GameState _state;
     private readonly StateService _stateService;
     private readonly SpriteService _spriteService;
+    public SpriteService SpriteService => _spriteService;
     private readonly TaskbarService _taskbarService;
     private readonly BattleService _battleService;
-    private readonly Random _rng = new();
+    private readonly Random _rng;
+
+    // Expor para TrayService
+    public GameState State => _state;
+    public StateService StateService => _stateService;
 
     private IReadOnlyList<ImageSource> _rightFrames = Array.Empty<ImageSource>();
     private IReadOnlyList<ImageSource> _leftFrames = Array.Empty<ImageSource>();
@@ -36,9 +42,14 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _facingRight = true;
     private bool _wildFacingRight = true;
     private bool? _battleFacingRestore;
-    private System.Timers.Timer? _animTimer;
-    private System.Timers.Timer? _walkTimer;
-    private System.Timers.Timer? _clashTimer;
+    private DispatcherTimer? _animTimer;
+    private DispatcherTimer? _walkTimer;
+    private DispatcherTimer? _clashTimer;
+    private DispatcherTimer? _interactionTimer;
+    private DispatcherTimer? _saveDebounceTimer;
+    private bool _hasPendingSave = false;
+    private DateTime _nextInteractionTime = DateTime.MinValue;
+    private bool _isInteracting = false;
     private double _x = 0;
     private double _wildX = 0;
     private int _barIndex = 0;
@@ -54,6 +65,7 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _isChasing = false;
     private bool _enemyStunned = false;
     private Pokemon? _stunnedEnemy = null;
+    private Pokemon? _activeWildPokemon = null;
 
     private string _bubbleText = string.Empty;
     private bool _bubbleVisible;
@@ -87,13 +99,15 @@ public class MainViewModel : INotifyPropertyChanged
 
     public string BubbleText { get => _bubbleText; private set { _bubbleText = value; OnPropertyChanged(); } }
     public bool BubbleVisible { get => _bubbleVisible && _state.ShowDialogBubbles; private set { _bubbleVisible = value; OnPropertyChanged(); } }
-    public bool ShowDialogBubbles { get => _state.ShowDialogBubbles; set { _state.ShowDialogBubbles = value; OnPropertyChanged(); OnPropertyChanged(nameof(BubbleVisible)); _stateService.Save(); } }
-    public bool GodMode { get => _state.GodMode; set { _state.GodMode = value; OnPropertyChanged(); _stateService.Save(); } }
-    public bool InfinitePokeballs { get => _state.InfinitePokeballs; set { _state.InfinitePokeballs = value; OnPropertyChanged(); _stateService.Save(); } }
+    public bool ShowDialogBubbles { get => _state.ShowDialogBubbles; set { _state.ShowDialogBubbles = value; OnPropertyChanged(); OnPropertyChanged(nameof(BubbleVisible)); RequestSave(); } }
+    public bool GodMode { get => _state.GodMode; set { _state.GodMode = value; OnPropertyChanged(); RequestSave(); } }
+    public bool InfinitePokeballs { get => _state.InfinitePokeballs; set { _state.InfinitePokeballs = value; OnPropertyChanged(); RequestSave(); } }
+    public bool SingleMonitorMode { get => _state.SingleMonitorMode; set { _state.SingleMonitorMode = value; OnPropertyChanged(); RequestSave(); } }
+    public bool InteractWithTaskbar { get => _state.InteractWithTaskbar; set { _state.InteractWithTaskbar = value; OnPropertyChanged(); RequestSave(); } }
     public bool WildVisible { get => _wildVisible; private set { _wildVisible = value; OnPropertyChanged(); } }
     public bool InBattle => _inBattle;
     public bool ShowPokeball => _inBattle || _manualCaptureActive; // Mostra durante batalha OU captura
-    public BallType SelectedBall { get => _state.SelectedBall; set { _state.SelectedBall = value; OnPropertyChanged(); OnPropertyChanged(nameof(SelectedBallName)); _stateService.Save(); } }
+    public BallType SelectedBall { get => _state.SelectedBall; set { _state.SelectedBall = value; OnPropertyChanged(); OnPropertyChanged(nameof(SelectedBallName)); RequestSave(); } }
     public string SelectedBallName => BallInfo.GetName(_state.SelectedBall);
     public double PlayerVerticalOffset { get; private set; }
     public double WildVerticalOffset { get; private set; }
@@ -113,14 +127,13 @@ public class MainViewModel : INotifyPropertyChanged
         if (!WildVisible) return false;
         if (!_enemyStunned) return false; // Só pode jogar se o inimigo estiver atordoado
         if (DateTime.UtcNow < _pokeballCooldownUntil) return false;
-        if (drag.Length < 20) return false; // Precisa arrastar pelo menos 20 pixels
+        if (drag.Length < Constants.MIN_DRAG_DISTANCE_PX) return false; // Precisa arrastar pelo menos 20 pixels
         
         // Se modo infinito está ativo, sempre pode jogar
         if (_state.InfinitePokeballs) return true;
         
         // Verificar se tem a Pokébola selecionada
-        var ballName = _state.SelectedBall.ToString();
-        if (_state.Inventory.GetValueOrDefault(ballName, 0) <= 0)
+        if (_state.Inventory.GetValueOrDefault(_state.SelectedBall, 0) <= 0)
         {
             ShowBalloon($"Sem {BallInfo.GetName(_state.SelectedBall)}! Vá ao PokéMart!");
             return false;
@@ -137,17 +150,16 @@ public class MainViewModel : INotifyPropertyChanged
         if (!_state.InfinitePokeballs)
         {
             // Verificar se tem a Pokébola selecionada no inventário
-            var ballName = _state.SelectedBall.ToString();
-            if (_state.Inventory.GetValueOrDefault(ballName, 0) <= 0)
+            if (_state.Inventory.GetValueOrDefault(_state.SelectedBall, 0) <= 0)
             {
                 ShowBubble($"Sem {BallInfo.GetName(_state.SelectedBall)}!");
                 return false;
             }
             
-            _state.Inventory[ballName]--;
+            _state.Inventory[_state.SelectedBall]--;
         }
         
-        _pokeballCooldownUntil = DateTime.UtcNow.AddSeconds(1.2);
+        _pokeballCooldownUntil = DateTime.UtcNow.AddSeconds(Constants.POKEBALL_COOLDOWN_SECONDS);
         
         // Chance de captura baseada em HP e tipo de Pokébola
         double hpPercent = (double)_stunnedEnemy.CurrentHP / _stunnedEnemy.MaxHP;
@@ -161,10 +173,10 @@ public class MainViewModel : INotifyPropertyChanged
         
         if (success)
         {
-            ShowBubble($"Capturado! ★");
+            ShowBubble($"Capturado! \u2605");
             _stunnedEnemy.HealFull();
             _state.Box.Add(_stunnedEnemy);
-            _stateService.Save();
+            RequestSave();
             
             // Esconder inimigo após captura
             HideWild();
@@ -183,6 +195,16 @@ public class MainViewModel : INotifyPropertyChanged
     public void SpawnRandomEnemy()
     {
         _battleService.ForceSpawn();
+    }
+
+    public void ApplySpriteRoot(string? newPath)
+    {
+        _spriteService.ApplySpriteRoot(newPath);
+        PortraitPathConverter.SpriteRootPath = _spriteService.SpriteRoot;
+        ReloadPlayerSprites();
+        ReloadWildSpritesIfNeeded();
+        RequestSave();
+        ShowBubble("Sprites recarregados!");
     }
     
     public void ActivateManualCaptureMode()
@@ -253,25 +275,26 @@ public class MainViewModel : INotifyPropertyChanged
     public bool ReverseMonitorWalk
     {
         get => _state.ReverseMonitorWalk;
-        set { _state.ReverseMonitorWalk = value; _stateService.Save(); }
+        set { _state.ReverseMonitorWalk = value; RequestSave(); }
     }
 
     public int HeightOffsetPixels
     {
         get => _state.HeightOffsetPixels;
-        set { _state.HeightOffsetPixels = value; _stateService.Save(); PositionOnTaskbar(); }
+        set { _state.HeightOffsetPixels = value; RequestSave(); PositionOnTaskbar(); }
     }
 
-    public MainViewModel(GameState state, StateService stateService, SpriteService spriteService, TaskbarService taskbarService, BattleService battleService)
+    public MainViewModel(GameState state, StateService stateService, SpriteService spriteService, TaskbarService taskbarService, BattleService battleService, Random? rng = null)
     {
         _state = state;
         _stateService = stateService;
         _spriteService = spriteService;
         _taskbarService = taskbarService;
         _battleService = battleService;
+        _rng = rng ?? new Random();
 
         _taskbarService.TaskbarChanged += (_, info) => PositionOnTaskbar();
-        _battleService.Notify += (_, msg) => ShowBalloon(msg);
+        _battleService.Notify += (_, msg) => System.Windows.Application.Current?.Dispatcher?.Invoke(() => ShowBalloon(msg));
         _battleService.BattleStarted += (_, wild) => System.Windows.Application.Current?.Dispatcher?.Invoke(() => OnBattleStarted(wild));
         _battleService.ManualCaptureStarted += (_, wild) => System.Windows.Application.Current?.Dispatcher?.Invoke(() => OnManualCaptureStarted(wild));
         _battleService.BattleFinished += (_, result) => System.Windows.Application.Current?.Dispatcher?.Invoke(() => OnBattleFinished(result.wild, result.won, result.caught, result.money));
@@ -279,22 +302,12 @@ public class MainViewModel : INotifyPropertyChanged
 
     public void Initialize()
     {
-        var active = _state.Active ?? _state.Party.First();
-        var sprites = _spriteService.LoadAnimations(active.DexNumber);
-        _rightFrames = sprites.WalkRight;
-        _leftFrames = sprites.WalkLeft;
-        _idleRight = sprites.IdleRight;
-        _idleLeft = sprites.IdleLeft;
-        _sleepRight = sprites.SleepRight;
-        _sleepLeft = sprites.SleepLeft;
-        PlayerVerticalOffset = sprites.VerticalOffset;
-        OnPropertyChanged(nameof(PlayerVerticalOffset));
+        ReloadPlayerSprites();
         _behavior = PetBehavior.Walking;
         _behaviorUntil = DateTime.MinValue;
-        _frameIndex = 0;
 
-        _animTimer = new System.Timers.Timer(150);
-        _animTimer.Elapsed += (_, __) =>
+        _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        _animTimer.Tick += (_, __) =>
         {
             var frames = GetCurrentFrames();
             if (frames.Count > 0)
@@ -310,16 +323,78 @@ public class MainViewModel : INotifyPropertyChanged
         };
         _animTimer.Start();
 
-        _walkTimer = new System.Timers.Timer(16);
-        _walkTimer.Elapsed += (_, __) => System.Windows.Application.Current?.Dispatcher?.Invoke(WalkStep);
+        _walkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _walkTimer.Tick += (_, __) => WalkStep();
         _walkTimer.Start();
+
+        StartInteractionTimer();
 
         PositionOnTaskbar();
         _battleService.Start();
     }
 
+    private void ReloadPlayerSprites()
+    {
+        var active = _state.Active ?? _state.Party.FirstOrDefault();
+        if (active == null)
+            return;
+
+        var sprites = _spriteService.LoadAnimations(active.DexNumber);
+        _rightFrames = sprites.WalkRight;
+        _leftFrames = sprites.WalkLeft;
+        _idleRight = sprites.IdleRight;
+        _idleLeft = sprites.IdleLeft;
+        _sleepRight = sprites.SleepRight;
+        _sleepLeft = sprites.SleepLeft;
+        PlayerVerticalOffset = sprites.VerticalOffset;
+        OnPropertyChanged(nameof(PlayerVerticalOffset));
+        _frameIndex = 0;
+        OnPropertyChanged(nameof(CurrentFrame));
+    }
+
+    private IReadOnlyList<ImageSource> GetWildFramesForCurrentState(SpriteAnimationSet sprites)
+    {
+        return _wildBehavior switch
+        {
+            PetBehavior.Sleeping => _wildFacingRight
+                ? (sprites.SleepRight.Count > 0 ? sprites.SleepRight : sprites.IdleRight)
+                : (sprites.SleepLeft.Count > 0 ? sprites.SleepLeft : sprites.IdleLeft),
+            PetBehavior.Idle => _wildFacingRight
+                ? (sprites.IdleRight.Count > 0 ? sprites.IdleRight : sprites.WalkRight)
+                : (sprites.IdleLeft.Count > 0 ? sprites.IdleLeft : sprites.WalkLeft),
+            _ => _wildFacingRight
+                ? (sprites.WalkRight.Count > 0 ? sprites.WalkRight : sprites.IdleRight)
+                : (sprites.WalkLeft.Count > 0 ? sprites.WalkLeft : sprites.IdleLeft)
+        };
+    }
+
+    private void ReloadWildSpritesIfNeeded()
+    {
+        if (_activeWildPokemon == null)
+            return;
+
+        var sprites = _spriteService.LoadAnimations(_activeWildPokemon.DexNumber);
+        _wildAnimations = sprites;
+        WildVerticalOffset = sprites.VerticalOffset;
+        OnPropertyChanged(nameof(WildVerticalOffset));
+
+        if (_enemyStunned)
+        {
+            var frames = sprites.SleepLeft.Count > 0 ? sprites.SleepLeft : sprites.IdleLeft;
+            _wildFrames = frames;
+        }
+        else
+        {
+            _wildFrames = GetWildFramesForCurrentState(sprites);
+        }
+
+        _wildFrameIndex = 0;
+        OnPropertyChanged(nameof(WildCurrentFrame));
+    }
+
     private void OnBattleStarted(Pokemon wild)
     {
+        _activeWildPokemon = wild.Copy();
         _wildAnimations = _spriteService.LoadAnimations(wild.DexNumber);
         var sprites = _wildAnimations;
         WildVerticalOffset = sprites.VerticalOffset;
@@ -368,6 +443,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void OnManualCaptureStarted(Pokemon wild)
     {
+        _activeWildPokemon = wild.Copy();
         _manualCaptureActive = true;
         _inBattle = false;
         OnPropertyChanged(nameof(ShowPokeball)); // Atualiza visibilidade da Pokébola
@@ -405,7 +481,7 @@ public class MainViewModel : INotifyPropertyChanged
     private void WalkStep()
     {
         var bars = _taskbarService.GetAllTaskbars();
-        if (bars.Length == 0)
+        if (bars.Length == 0 || SingleMonitorMode)
         {
             bars = new[] { _taskbarService.GetTaskbarInfo() };
         }
@@ -553,10 +629,10 @@ public class MainViewModel : INotifyPropertyChanged
         double y = info.Edge switch
         {
             TaskbarEdge.Top => info.Bounds.Top + pad,
-            TaskbarEdge.Bottom => info.Bounds.Bottom - WindowHeight,
+            TaskbarEdge.Bottom => info.Bounds.Top - WindowHeight + HeightOffsetPixels,  // Topo da barra menos altura da janela + ajuste manual
             TaskbarEdge.Left => info.Bounds.Top + pad,
             TaskbarEdge.Right => info.Bounds.Top + pad,
-            _ => info.Bounds.Bottom - WindowHeight
+            _ => info.Bounds.Top - WindowHeight + HeightOffsetPixels
         };
         return y + HeightOffsetPixels;
     }
@@ -824,29 +900,25 @@ public class MainViewModel : INotifyPropertyChanged
         StopClashTimer();
         if (!WildVisible)
             return;
-        _clashTimer = new System.Timers.Timer(1800);
-        _clashTimer.Elapsed += ClashTimerElapsed;
+        _clashTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1800) };
+        _clashTimer.Tick += ClashTimerElapsed;
         _clashTimer.Start();
     }
 
-    private void ClashTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
+    private void ClashTimerElapsed(object? sender, EventArgs e)
     {
-        System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
+        if (WildVisible)
         {
-            if (WildVisible)
-            {
-                BattleClashRequested?.Invoke(this, EventArgs.Empty);
-            }
-        });
+            BattleClashRequested?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void StopClashTimer()
     {
         if (_clashTimer != null)
         {
-            _clashTimer.Elapsed -= ClashTimerElapsed;
+            _clashTimer.Tick -= ClashTimerElapsed;
             _clashTimer.Stop();
-            _clashTimer.Dispose();
             _clashTimer = null;
         }
     }
@@ -872,6 +944,7 @@ public class MainViewModel : INotifyPropertyChanged
             _battleFacingRestore = null;
         }
         _wildAnimations = null;
+        _activeWildPokemon = null;
     }
 
     private void LogToFile(string message)
@@ -941,13 +1014,13 @@ public class MainViewModel : INotifyPropertyChanged
         {
             active.CurrentHP += 1;
             msg = $"{active.Name} ganhou +1 HP!";
-            _stateService.Save();
+            RequestSave();
         }
         else if (roll < 0.10)
         {
             _state.Money += 1;
             msg = "+$1 encontrado!";
-            _stateService.Save();
+            RequestSave();
         }
         else
         {
@@ -983,29 +1056,56 @@ public class MainViewModel : INotifyPropertyChanged
     {
         foreach (var p in _state.Party)
             p.CurrentHP = p.MaxHP;
-        _stateService.Save();
-        ShowBalloon("PokéCenter", $"Seu time foi curado! ({_state.Party.Count} Pokémon)");
+        RequestSave();
+        ShowBalloon("Pok\u00e9Center", $"Seu time foi curado! ({_state.Party.Count} Pok\u00e9mon)");
     }
 
     public void OpenShop()
     {
-        var shopWindow = new Views.ShopWindow(_state, () => _stateService.Save());
+        var shopWindow = new Views.ShopWindow(_state, () => RequestSave());
         shopWindow.ShowDialog();
     }
 
     public void ManagePC()
     {
-        var partyInfo = string.Join("\n", _state.Party.Select((p, i) => 
-            $"  {(i == _state.ActiveIndex ? "★" : "  ")} {p.Name} (Lv.{p.Level}) - HP: {p.CurrentHP}/{p.MaxHP}"));
-        
-        var boxInfo = _state.Box.Count > 0 
-            ? string.Join("\n", _state.Box.Select(p => $"  • {p.Name} (Lv.{p.Level})"))
-            : "  (vazio)";
-        
-        var message = $"🎒 Time ({_state.Party.Count}/6):\n{partyInfo}\n\n" +
-                     $"💾 PC ({_state.Box.Count}):\n{boxInfo}";
-        
-        System.Windows.MessageBox.Show(message, "PC - Organizar Pokémon", System.Windows.MessageBoxButton.OK);
+        var pcWindow = new Views.PCWindow(this, _state);
+        pcWindow.ShowDialog();
+    }
+
+    public void SwitchActivePokemon(Pokemon newActive)
+    {
+        if (newActive == null || !_state.Box.Contains(newActive)) return;
+
+        // Mover Pokémon atual para o Box
+        var currentActive = _state.Active;
+        if (currentActive != null)
+        {
+            _state.Box.Add(currentActive);
+            _state.Party.RemoveAt(_state.ActiveIndex);
+        }
+
+        // Mover novo Pokémon do Box para Party
+        _state.Box.Remove(newActive);
+        if (_state.Party.Count == 0)
+        {
+            _state.Party.Add(newActive);
+            _state.ActiveIndex = 0;
+        }
+        else
+        {
+            _state.Party.Insert(_state.ActiveIndex, newActive);
+        }
+
+        ReloadPlayerSprites();
+        RequestSave();
+    }
+
+    public void ReleasePokemon(Pokemon pokemon)
+    {
+        if (pokemon == null || !_state.Box.Contains(pokemon)) return;
+
+        _state.Box.Remove(pokemon);
+        RequestSave();
     }
 
     public void ToggleVisibility()
@@ -1023,7 +1123,41 @@ public class MainViewModel : INotifyPropertyChanged
         });
     }
 
-    public void SaveNow() => _stateService.Save();
+    // Debounced save - reduz I/O de disco
+    private void RequestSave()
+    {
+        _hasPendingSave = true;
+        
+        // Criar timer na primeira vez
+        if (_saveDebounceTimer == null)
+        {
+            _saveDebounceTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(2)
+            };
+            _saveDebounceTimer.Tick += (s, e) =>
+            {
+                _saveDebounceTimer.Stop();
+                if (_hasPendingSave)
+                {
+                    _stateService.Save();
+                    _hasPendingSave = false;
+                }
+            };
+        }
+        
+        // Reiniciar timer (debounce)
+        _saveDebounceTimer.Stop();
+        _saveDebounceTimer.Start();
+    }
+
+    public void SaveNow()
+    {
+        // Forçar save imediato (ex: ao fechar app)
+        _saveDebounceTimer?.Stop();
+        _hasPendingSave = false;
+        _stateService.Save();
+    }
 
     private void ShowBalloon(string message)
     {
@@ -1058,13 +1192,11 @@ public class MainViewModel : INotifyPropertyChanged
                 _battleFacingRestore = null;
             }
             
-            // Inimigo fica atordoado para captura - NÃO esconder
+            // Inimigo fica atordoado para captura - N\u00c3O esconder
             _enemyStunned = true;
             _stunnedEnemy = wild;
             _state.Money += money;
-            _stateService.Save();
-            
-            LogToFile($"[OnBattleFinished] WildVisible={WildVisible}, _wildFrames.Count={_wildFrames.Count}");
+            RequestSave();            LogToFile($"[OnBattleFinished] WildVisible={WildVisible}, _wildFrames.Count={_wildFrames.Count}");
             
             // Ativar modo de captura manual
             _manualCaptureActive = true;
@@ -1103,14 +1235,83 @@ public class MainViewModel : INotifyPropertyChanged
 
         if (saved)
         {
-            _stateService.Save();
+            RequestSave();
         }
         
         _enemyStunned = false;
         _stunnedEnemy = null;
     }
 
+    private void StartInteractionTimer()
+    {
+        _interactionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _interactionTimer.Tick += (_, __) => CheckTaskbarInteraction();
+        _interactionTimer.Start();
+    }
+
+    private void CheckTaskbarInteraction()
+    {
+        if (!InteractWithTaskbar || _inBattle || _isInteracting || DateTime.Now < _nextInteractionTime)
+            return;
+
+        // 5% de chance por segundo de iniciar uma interação
+        if (_rng.NextDouble() < 0.05)
+        {
+            PerformTaskbarInteraction();
+        }
+    }
+
+    private void PerformTaskbarInteraction()
+    {
+        _isInteracting = true;
+        
+        // Tipos de interação aleatórios
+        var actions = new[] { "arrasta", "clica", "observa", "cheira", "cutuca" };
+        var items = new[] { "ícone", "botão", "pasta", "app", "arquivo" };
+        
+        var action = actions[_rng.Next(actions.Length)];
+        var item = items[_rng.Next(items.Length)];
+        
+        ShowBubble($"*{action} {item}*");
+        
+        // Parar de andar durante a interação
+        var previousBehavior = _behavior;
+        _behavior = PetBehavior.Idle;
+        
+        // Restaurar comportamento após 2-4 segundos
+        var duration = 2000 + _rng.Next(2000);
+        System.Threading.Tasks.Task.Delay(duration).ContinueWith(_ =>
+        {
+            _behavior = previousBehavior;
+            _isInteracting = false;
+            _nextInteractionTime = DateTime.Now.AddSeconds(15 + _rng.Next(30)); // Próxima interação em 15-45 segundos
+        });
+    }
+
+    public void Dispose()
+    {
+        // Parar e limpar todos os timers DispatcherTimer
+        _animTimer?.Stop();
+        _walkTimer?.Stop();
+        _clashTimer?.Stop();
+        _interactionTimer?.Stop();
+        _saveDebounceTimer?.Stop();
+
+        // Limpar timer System.Timers.Timer (bubbleTimer)
+        if (_bubbleTimer != null)
+        {
+            _bubbleTimer.Stop();
+            _bubbleTimer.Dispose();
+            _bubbleTimer = null;
+        }
+
+        // Forçar save final
+        try
+        {
+            SaveNow();
+        }
+        catch { }
+    }
+
     private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
-
-

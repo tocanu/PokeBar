@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Windows.Threading;
 using PokeBar.Models;
 
 namespace PokeBar.Services;
@@ -8,19 +9,26 @@ public class BattleService
 {
     private readonly GameState _state;
     private readonly DexService _dexService;
-    private readonly Random _rng = new();
-    private System.Timers.Timer? _spawnTimer;
-    private System.Timers.Timer? _resolveTimer;
-    private System.Timers.Timer? _manualTimer;
+    private readonly Random _rng;
+    private DispatcherTimer? _spawnTimer;
+    private DispatcherTimer? _resolveTimer;
+    private DispatcherTimer? _manualTimer;
     private Pokemon? _activeWild;
     private bool _awaitingManualCapture;
     private int _pendingManualMoney;
     private bool _battleTriggered;
 
-    public BattleService(GameState state, DexService dexService)
+#if DEBUG
+    private const bool LOGGING_ENABLED = true;
+#else
+    private const bool LOGGING_ENABLED = false;
+#endif
+
+    public BattleService(GameState state, DexService dexService, Random? rng = null)
     {
         _state = state;
         _dexService = dexService;
+        _rng = rng ?? new Random();
     }
 
     public event EventHandler<string>? Notify;
@@ -30,13 +38,15 @@ public class BattleService
 
     public void Start()
     {
-        _spawnTimer = new System.Timers.Timer(RandomDelay());
-        _spawnTimer.Elapsed += (_, __) => OnSpawn();
-        _spawnTimer.AutoReset = true;
+        _spawnTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(RandomDelay())
+        };
+        _spawnTimer.Tick += (_, __) => OnSpawn();
         _spawnTimer.Start();
     }
 
-    private double RandomDelay() => _rng.Next(30, 91) * 1000; // 30-90s
+    private double RandomDelay() => _rng.Next(Constants.MIN_SPAWN_SECONDS, Constants.MAX_SPAWN_SECONDS + 1) * 1000;
 
     public void ForceSpawn()
     {
@@ -53,7 +63,13 @@ public class BattleService
         _battleTriggered = false;
         var msg = $"Um {wild.Name} selvagem apareceu!";
         Notify?.Invoke(this, msg);
-        BattleStarted?.Invoke(this, wild.Clone());
+        BattleStarted?.Invoke(this, wild.Copy());
+        
+        // Resetar o intervalo do spawn timer para o próximo spawn
+        if (_spawnTimer != null)
+        {
+            _spawnTimer.Interval = TimeSpan.FromMilliseconds(RandomDelay());
+        }
     }
 
     public void TriggerBattleResolution()
@@ -68,12 +84,15 @@ public class BattleService
     private void ScheduleResolve()
     {
         _resolveTimer?.Stop();
-        _resolveTimer?.Dispose();
-        _resolveTimer = new System.Timers.Timer(5500)
+        _resolveTimer = new DispatcherTimer
         {
-            AutoReset = false
+            Interval = TimeSpan.FromMilliseconds(Constants.BATTLE_RESOLUTION_DELAY_MS)
         };
-        _resolveTimer.Elapsed += (_, __) => ResolvePendingBattle();
+        _resolveTimer.Tick += (_, __) =>
+        {
+            _resolveTimer.Stop();
+            ResolvePendingBattle();
+        };
         _resolveTimer.Start();
     }
 
@@ -83,9 +102,9 @@ public class BattleService
         if (wild == null)
             return;
 
-        var player = (_state.Active ?? _state.Party.FirstOrDefault())?.Clone() ?? new Pokemon();
+        var player = (_state.Active ?? _state.Party.FirstOrDefault())?.Copy() ?? new Pokemon();
         player.HealFull();
-        var result = ResolveBattle(player, wild.Clone());
+        var result = ResolveBattle(player, wild.Copy());
         if (result.won && !result.caught)
         {
             BeginManualCapture(wild, result.money);
@@ -114,7 +133,7 @@ public class BattleService
         bool playerFirst = player.Speed >= wild.Speed;
         int turns = 0;
 
-        while (player.CurrentHP > 0 && wild.CurrentHP > 0 && turns < 200)
+        while (player.CurrentHP > 0 && wild.CurrentHP > 0 && turns < Constants.MAX_BATTLE_TURNS)
         {
             if (playerFirst)
             {
@@ -157,7 +176,7 @@ public class BattleService
     private void Attack(Pokemon attacker, Pokemon defender)
     {
         int baseDamage = Math.Max(1, attacker.Attack - Math.Max(1, defender.Defense / 2));
-        double variance = 0.85 + _rng.NextDouble() * 0.3; // 0.85 - 1.15
+        double variance = Constants.DAMAGE_VARIANCE_MIN + _rng.NextDouble() * (Constants.DAMAGE_VARIANCE_MAX - Constants.DAMAGE_VARIANCE_MIN);
         int dmg = Math.Max(1, (int)(baseDamage * variance));
         defender.CurrentHP = Math.Max(0, defender.CurrentHP - dmg);
     }
@@ -194,11 +213,9 @@ public class BattleService
         _awaitingManualCapture = false;
         _pendingManualMoney = 0;
         _manualTimer?.Stop();
-        _manualTimer?.Dispose();
         _manualTimer = null;
         _activeWild = null;
         _resolveTimer?.Stop();
-        _resolveTimer?.Dispose();
         _resolveTimer = null;
         if (caught)
         {
@@ -211,19 +228,22 @@ public class BattleService
     {
         _awaitingManualCapture = true;
         _pendingManualMoney = money;
-        ManualCaptureStarted?.Invoke(this, wild.Clone());
+        ManualCaptureStarted?.Invoke(this, wild.Copy());
         Notify?.Invoke(this, $"{wild.Name} ficou atordoado! Lance uma Pokebola!");
         _manualTimer?.Stop();
-        _manualTimer?.Dispose();
-        _manualTimer = new System.Timers.Timer(12000)
+        _manualTimer = new DispatcherTimer
         {
-            AutoReset = false
+            Interval = TimeSpan.FromMilliseconds(12000)
         };
-        _manualTimer.Elapsed += ManualTimerElapsed;
+        _manualTimer.Tick += (_, __) =>
+        {
+            _manualTimer.Stop();
+            ManualTimerElapsed();
+        };
         _manualTimer.Start();
     }
 
-    private void ManualTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
+    private void ManualTimerElapsed()
     {
         var wild = _activeWild;
         if (wild == null)
@@ -233,6 +253,7 @@ public class BattleService
 
     private void LogToFile(string message)
     {
+#if DEBUG
         try
         {
             var logPath = System.IO.Path.Combine(
@@ -243,6 +264,7 @@ public class BattleService
             System.IO.File.AppendAllText(logPath, $"[{timestamp}] {message}\n");
         }
         catch { /* Ignorar erros de log */ }
+#endif
     }
 }
 

@@ -19,6 +19,7 @@ namespace PokeBar
         private WildSpriteWindow? _wildWindow;
         private CaptureOverlayWindow? _captureWindow;
         private PokeballWindow? _pokeballWindow;
+        private MainViewModel? _mainViewModel;
 
         protected override void OnStartup(System.Windows.StartupEventArgs e)
         {
@@ -31,11 +32,12 @@ namespace PokeBar
                 _state = _stateService.Load();
 
                 _taskbarService = new TaskbarService();
-                _spriteService = new SpriteService();
+                _spriteService = new SpriteService(_state);
                 _dexService = new DexService(_spriteService);
                 _battleService = new BattleService(_state, _dexService);
 
                 vm = new MainViewModel(_state, _stateService, _spriteService, _taskbarService, _battleService);
+                _mainViewModel = vm; // Guardar refer\u00eancia para OnExit
 
                 _window = new SpriteWindow { DataContext = vm };
                 _window.Show();
@@ -55,6 +57,9 @@ namespace PokeBar
                 _captureWindow.Attach(vm, _window, _wildWindow);
                 _captureWindow.Show();
                 _captureWindow.DisableCaptureMode();
+
+                // Configurar path de sprites no converter estático
+                Utils.PortraitPathConverter.SpriteRootPath = _spriteService.SpriteRoot;
 
                 _tray = new TrayService(vm);
                 _tray.Initialize();
@@ -101,7 +106,8 @@ namespace PokeBar
         {
             try
             {
-                _stateService?.Save();
+                // Dispose MainViewModel (limpa timers e força save final)
+                _mainViewModel?.Dispose();
             }
             catch { }
             _tray?.Dispose();

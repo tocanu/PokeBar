@@ -15,7 +15,7 @@ namespace PokeBar.Views
     {
         private readonly DispatcherTimer _particleTimer;
         private readonly List<Particle> _particles = new();
-        private readonly Random _random = new();
+        private readonly Random _random;
         private WinPoint _targetPoint; // Para onde as partículas devem ir (centro da Pokébola)
         private bool _isActive = false;
 
@@ -28,9 +28,10 @@ namespace PokeBar.Views
             public double TargetPhase { get; set; } // 0 = dispersão, 1 = sugando
         }
 
-        public CaptureEffectsWindow()
+        public CaptureEffectsWindow(Random? random = null)
         {
             InitializeComponent();
+            _random = random ?? new Random();
             
             _particleTimer = new DispatcherTimer
             {

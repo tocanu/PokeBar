@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -31,7 +32,7 @@ namespace PokeBar.Views
             if (DataContext is MainViewModel vm)
             {
                 _vm = vm;
-                vm.RequestReposition += OnRequestReposition;
+                vm.RequestReposition += UpdatePosition;
                 vm.BattleClashRequested += OnBattleClashRequested;
                 vm.RequestPlayerJump += OnRequestPlayerJump;
             }
@@ -41,17 +42,38 @@ namespace PokeBar.Views
         {
             if (_vm != null)
             {
-                _vm.RequestReposition -= OnRequestReposition;
+                _vm.RequestReposition -= UpdatePosition;
                 _vm.BattleClashRequested -= OnBattleClashRequested;
                 _vm.RequestPlayerJump -= OnRequestPlayerJump;
                 _vm = null;
             }
         }
 
-        private void OnRequestReposition(object? sender, System.Windows.Point p)
+        private void UpdatePosition(object? sender, System.Windows.Point p)
         {
+            // Obter posição do mouse na tela
+            var mousePos = System.Windows.Forms.Control.MousePosition;
+            
+            // Obter informações da tela
+            var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)p.X, (int)p.Y));
+            var workingArea = screen.WorkingArea;
+            
+            // X: movimento livre horizontal (segue p.X)
             Left = p.X;
+            
+            // Y: posição fixa na barra de tarefas (segue p.Y)
             Top = p.Y;
+            
+            // Não aplicar offset - o cálculo de Y já posiciona corretamente
+            if (_vm != null)
+            {
+                PlayerTranslate.Y = 0;
+                
+                // Log para arquivo
+                var logPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "position_log.txt");
+                var logMessage = $"[{DateTime.Now:HH:mm:ss.fff}] Mouse: X={mousePos.X}, Y={mousePos.Y} | Pokemon Window: X={Left:F0}, Y={Top:F0} | Sprite Offset: Y={PlayerTranslate.Y:F0} | WorkingArea Bottom: {workingArea.Bottom}\n";
+                System.IO.File.AppendAllText(logPath, logMessage);
+            }
         }
 
         private void OnBattleClashRequested(object? sender, EventArgs e)

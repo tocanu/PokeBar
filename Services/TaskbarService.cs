@@ -20,9 +20,28 @@ public class TaskbarService
 {
     public event EventHandler<TaskbarInfo>? TaskbarChanged;
 
+    private TaskbarInfo[]? _cachedTaskbars;
+    private DateTime _cacheTime = DateTime.MinValue;
+    private const double CACHE_VALIDITY_SECONDS = 10; // Fallback: revalidar a cada 10s
+
     public TaskbarService()
     {
-        SystemEvents.DisplaySettingsChanged += (_, __) => RaiseChanged();
+        SystemEvents.DisplaySettingsChanged += (_, __) => InvalidateCache();
+        
+        // Detectar mudanças na taskbar (reposicionamento, auto-hide)
+        SystemEvents.UserPreferenceChanged += (_, e) =>
+        {
+            if (e.Category == UserPreferenceCategory.Desktop)
+            {
+                InvalidateCache();
+            }
+        };
+    }
+
+    private void InvalidateCache()
+    {
+        _cachedTaskbars = null;
+        RaiseChanged();
     }
 
     public TaskbarInfo GetTaskbarInfo()
@@ -55,6 +74,13 @@ public class TaskbarService
 
     public TaskbarInfo[] GetAllTaskbars()
     {
+        // Retornar cache se válido
+        if (_cachedTaskbars != null && (DateTime.UtcNow - _cacheTime).TotalSeconds < CACHE_VALIDITY_SECONDS)
+        {
+            return _cachedTaskbars;
+        }
+
+        // Recalcular e cachear
         var result = new System.Collections.Generic.List<TaskbarInfo>();
         var targets = new System.Collections.Generic.HashSet<IntPtr>();
         NativeMethods.EnumWindows((h, _) =>
@@ -89,7 +115,12 @@ public class TaskbarService
 
         // Ordena por X (esquerda->direita) para caminhada sequencial
         result.Sort((a, b) => a.Bounds.Left.CompareTo(b.Bounds.Left));
-        return result.ToArray();
+        
+        // Atualizar cache
+        _cachedTaskbars = result.ToArray();
+        _cacheTime = DateTime.UtcNow;
+        
+        return _cachedTaskbars;
     }
 
     public bool IsFullscreenActive()

@@ -40,13 +40,21 @@ public class TrayService : IDisposable
         menu.Items.Add(new ToolStripSeparator());
         
         // Configurações
+        var singleMonitor = new ToolStripMenuItem("🖥️ Usar apenas um monitor") { CheckOnClick = true, Checked = _vm.SingleMonitorMode };
+        singleMonitor.Click += (_, __) => _vm.SingleMonitorMode = singleMonitor.Checked;
+        menu.Items.Add(singleMonitor);
+        
         var invert = new ToolStripMenuItem("Inverter transição multimonitor") { CheckOnClick = true, Checked = _vm.ReverseMonitorWalk };
-        invert.CheckedChanged += (_, __) => _vm.ReverseMonitorWalk = invert.Checked;
+        invert.Click += (_, __) => _vm.ReverseMonitorWalk = invert.Checked;
         menu.Items.Add(invert);
         
         var showBubbles = new ToolStripMenuItem("Mostrar diálogos") { CheckOnClick = true, Checked = _vm.ShowDialogBubbles };
-        showBubbles.CheckedChanged += (_, __) => _vm.ShowDialogBubbles = showBubbles.Checked;
+        showBubbles.Click += (_, __) => _vm.ShowDialogBubbles = showBubbles.Checked;
         menu.Items.Add(showBubbles);
+        
+        var interactTaskbar = new ToolStripMenuItem("🎮 Interagir com ícones da barra") { CheckOnClick = true, Checked = _vm.InteractWithTaskbar };
+        interactTaskbar.Click += (_, __) => _vm.InteractWithTaskbar = interactTaskbar.Checked;
+        menu.Items.Add(interactTaskbar);
         
         var godModeItem = new ToolStripMenuItem("⚡ God Mode (Invencível)") { CheckOnClick = true, Checked = _vm.GodMode };
         godModeItem.CheckedChanged += (_, __) => _vm.GodMode = godModeItem.Checked;
@@ -78,6 +86,64 @@ public class TrayService : IDisposable
         ballMenu.DropDownItems.Add(quickball);
         
         menu.Items.Add(ballMenu);
+        
+        menu.Items.Add(new ToolStripSeparator());
+        
+        // Ajuste de Altura (invertido porque +Y = para baixo na tela)
+        var heightMenu = new ToolStripMenuItem("📏 Ajustar Altura");
+        var lastHeightChange = DateTime.MinValue;
+        
+        void AdjustHeight(int delta)
+        {
+            var now = DateTime.Now;
+            if ((now - lastHeightChange).TotalMilliseconds < 200) return; // Debounce 200ms
+            lastHeightChange = now;
+            _vm.HeightOffsetPixels -= delta; // Invertido: -delta para subir = diminui Y
+        }
+        
+        heightMenu.DropDownItems.Add("⬆️ Subir (+5px)", null, (_, __) => AdjustHeight(5));
+        heightMenu.DropDownItems.Add("⬆️ Subir Pouco (+1px)", null, (_, __) => AdjustHeight(1));
+        heightMenu.DropDownItems.Add("↕️ Resetar (0px)", null, (_, __) => { _vm.HeightOffsetPixels = 0; lastHeightChange = DateTime.Now; });
+        heightMenu.DropDownItems.Add("⬇️ Descer Pouco (-1px)", null, (_, __) => AdjustHeight(-1));
+        heightMenu.DropDownItems.Add("⬇️ Descer (-5px)", null, (_, __) => AdjustHeight(-5));
+        heightMenu.DropDownItems.Add(new ToolStripSeparator());
+        var currentHeight = new ToolStripMenuItem($"Atual: {_vm.HeightOffsetPixels}px") { Enabled = false };
+        heightMenu.DropDownItems.Add(currentHeight);
+        heightMenu.DropDownOpening += (_, __) => { currentHeight.Text = $"Atual: {_vm.HeightOffsetPixels}px"; };
+        menu.Items.Add(heightMenu);
+        
+        menu.Items.Add(new ToolStripSeparator());
+        
+        // Configuração de Sprites
+        var configMenu = new ToolStripMenuItem("?? Configurações");
+
+        var spritePathItem = new ToolStripMenuItem("?? Selecionar Pasta de Sprites");
+
+        spritePathItem.Click += (_, __) => SelectSpriteFolder();
+
+        configMenu.DropDownItems.Add(spritePathItem);
+
+        var resetSpritePath = new ToolStripMenuItem("?? Resetar Pasta Padrão");
+
+        resetSpritePath.Click += (_, __) =>
+
+        {
+
+            _vm.ApplySpriteRoot(null);
+
+            System.Windows.MessageBox.Show("Pasta de sprites resetada e recarregada.", "Sprites", System.Windows.MessageBoxButton.OK);
+
+        };
+
+        configMenu.DropDownItems.Add(resetSpritePath);
+
+
+        
+
+
+
+        
+        menu.Items.Add(configMenu);
         
         menu.Items.Add(new ToolStripSeparator());
         
@@ -122,6 +188,22 @@ public class TrayService : IDisposable
         }
     }
 
+    private void SelectSpriteFolder()
+    {
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "Selecione a pasta raiz dos sprites (ex: C\\SpriteCollab\\sprite)",
+            ShowNewFolderButton = false
+        };
+
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var selectedPath = dialog.SelectedPath;
+            _vm.ApplySpriteRoot(selectedPath);
+            System.Windows.MessageBox.Show($"Pasta configurada: {selectedPath}\nSprites recarregados imediatamente.", "Sprites", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+    }
+
     public void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info, int timeout = 3000)
     {
         _icon?.ShowBalloonTip(timeout, title, text, icon);

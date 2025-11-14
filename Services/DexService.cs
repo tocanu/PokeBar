@@ -10,12 +10,13 @@ namespace PokeBar.Services;
 public class DexService
 {
     private readonly SpriteService _spriteService;
-    private readonly List<DexEntry> _entries;
+    private readonly List<DexEntry> _entries = new();
 
     public DexService(SpriteService spriteService)
     {
         _spriteService = spriteService;
-        _entries = LoadEntries();
+        _spriteService.SpriteRootChanged += (_, __) => ReloadEntries();
+        ReloadEntries();
     }
 
     public IReadOnlyList<DexEntry> Entries => _entries;
@@ -50,6 +51,13 @@ public class DexService
             Defense = defense,
             Speed = speed,
         };
+    }
+
+    public void ReloadEntries()
+    {
+        var list = LoadEntries();
+        _entries.Clear();
+        _entries.AddRange(list);
     }
 
     private List<DexEntry> LoadEntries()

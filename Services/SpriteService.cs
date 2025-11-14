@@ -10,13 +10,49 @@ namespace PokeBar.Services;
 
 public class SpriteService
 {
-    public string SpriteRoot { get; }
+    public string SpriteRoot { get; private set; } = string.Empty;
+    private readonly GameState _state;
+    public event EventHandler<string>? SpriteRootChanged;
 
-    public SpriteService()
+    public SpriteService(GameState state)
     {
-        // Allow override by env var; fallback to provided path
-        SpriteRoot = Environment.GetEnvironmentVariable("POKEBAR_SPRITE_ROOT")
-                     ?? "C:\\Users\\Arthur\\Documents\\Projetos\\SpriteCollab\\sprite";
+        _state = state;
+        UpdateSpriteRoot();
+    }
+
+    public void ApplySpriteRoot(string? newRoot)
+    {
+        _state.SpriteRootPath = string.IsNullOrWhiteSpace(newRoot) ? null : newRoot;
+        UpdateSpriteRoot();
+    }
+
+    public void UpdateSpriteRoot()
+    {
+        var previous = SpriteRoot;
+        // Prioridade:
+        // 1. GameState.SpriteRootPath (configuração do usuário)
+        // 2. Variável de ambiente POKEBAR_SPRITE_ROOT
+        // 3. Pasta relativa ./sprites/ (se existir)
+        // 4. Fallback hardcoded (para desenvolvimento)
+        
+        var relativePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sprites");
+        var hardcodedPath = "C:\\Users\\Arthur\\Documents\\Projetos\\SpriteCollab\\sprite";
+        
+        SpriteRoot = _state.SpriteRootPath 
+                     ?? Environment.GetEnvironmentVariable("POKEBAR_SPRITE_ROOT")
+                     ?? (Directory.Exists(relativePath) ? relativePath : hardcodedPath);
+
+        if (!string.Equals(previous, SpriteRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            SpriteRootChanged?.Invoke(this, SpriteRoot);
+        }
+    }
+
+    public string GetPortraitPath(int dexNumber)
+    {
+        // Para portraits, usar subpasta "portrait" ao invés de "sprite"
+        var portraitRoot = SpriteRoot.Replace("\\sprite", "\\portrait");
+        return Path.Combine(portraitRoot, dexNumber.ToString("D4"), "Normal.png");
     }
 
     public SpriteAnimationSet LoadAnimations(int dexNumber)
@@ -316,7 +352,28 @@ public class SpriteService
             var pixels = new byte[stride * height];
             converted.CopyPixels(pixels, stride, 0);
 
-            // Encontrar última linha com pixels não transparentes (a base real do sprite)
+            // Encontrar primeira linha visível (topo do sprite real)
+            int firstVisibleY = 0;
+            for (int y = 0; y < height; y++)
+            {
+                bool hasPixel = false;
+                for (int x = 0; x < width; x++)
+                {
+                    int alphaIndex = (y * stride) + (x * 4) + 3;
+                    if (pixels[alphaIndex] > 0)
+                    {
+                        hasPixel = true;
+                        break;
+                    }
+                }
+                if (hasPixel)
+                {
+                    firstVisibleY = y;
+                    break;
+                }
+            }
+
+            // Encontrar última linha visível (base do sprite real)
             int lastVisibleY = height - 1;
             for (int y = height - 1; y >= 0; y--)
             {
@@ -337,9 +394,12 @@ public class SpriteService
                 }
             }
 
-            // Retorna quantos pixels transparentes tem na parte inferior
-            // Se o sprite vai até y=70 em uma imagem de 96px, tem 25px de padding inferior
-            return height - lastVisibleY - 1;
+            // Calcular o padding superior (espaço transparente acima do sprite)
+            int topPadding = firstVisibleY;
+            
+            // Retornar o topPadding positivo para que quando aplicado com sinal negativo
+            // no SpriteWindow (PlayerTranslate.Y = -offset), empurre o sprite para baixo
+            return topPadding;
         }
         catch
         {

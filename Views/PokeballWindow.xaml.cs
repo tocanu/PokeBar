@@ -27,10 +27,10 @@ namespace PokeBar.Views
         
         // Física
         private WinVector _velocity = new WinVector(0, 0);
-        private const double GRAVITY = 800; // pixels/s² (simulação de gravidade)
-        private const double BOUNCE_DAMPING = 0.6; // Coeficiente de restituição
-        private const double AIR_RESISTANCE = 0.98; // Resistência do ar
-        private const double MIN_VELOCITY = 10; // Velocidade mínima antes de parar
+        private const double GRAVITY = Constants.GRAVITY_PX_PER_SEC2;
+        private const double BOUNCE_DAMPING = Constants.BOUNCE_DAMPING;
+        private const double AIR_RESISTANCE = Constants.AIR_RESISTANCE;
+        private const double MIN_VELOCITY = Constants.MIN_VELOCITY_PX;
         
         private DispatcherTimer? _physicsTimer;
         private DateTime _lastUpdate;

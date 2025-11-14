@@ -75,11 +75,12 @@
                Source="{Binding CurrentFrame}"
                Stretch="None"
                HorizontalAlignment="Center"
-               VerticalAlignment="Bottom">
+               VerticalAlignment="Bottom"
+               Margin="0,0,0,0">
             <Image.RenderTransform>
                 <TransformGroup>
                     <ScaleTransform/>
-                    <TranslateTransform x:Name="PlayerTranslate" Y="{Binding PlayerVerticalOffset}"/>
+                    <TranslateTransform x:Name="PlayerTranslate" Y="0"/>
                 </TransformGroup>
             </Image.RenderTransform>
         </Image>

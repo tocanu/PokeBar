@@ -31,214 +31,167 @@ public partial class ShopWindow : Window
 
     private void UpdateUI()
     {
-        MoneyText.Text = $"${_state.Money}";
+        MoneyRun.Text = $"{_state.Money}";
         
         // Contar todas as Pokébolas
         int totalBalls = 0;
         foreach (BallType ballType in Enum.GetValues(typeof(BallType)))
         {
-            totalBalls += _state.Inventory.GetValueOrDefault(ballType.ToString(), 0);
+            totalBalls += _state.Inventory.GetValueOrDefault(ballType, 0);
         }
         
-        InventoryText.Text = $"📦 Pokébolas: {totalBalls}";
+        InventoryText.Text = $"📦 Pokébolas no inventário: {totalBalls}";
     }
 
     private void CreateShopItems()
     {
         ItemsPanel.Children.Clear();
 
-        // Pokébolas disponíveis para compra
-        AddShopItem("⚪ Poké Ball", "Taxa de captura básica (1x)", 200, BallType.PokeBall, "#EF4444");
-        AddShopItem("🔵 Great Ball", "Taxa de captura melhorada (1.5x)", 600, BallType.GreatBall, "#3B82F6");
-        AddShopItem("⚫ Ultra Ball", "Alta taxa de captura (2x)", 1200, BallType.UltraBall, "#FBBF24");
-        AddShopItem("🌊 Net Ball", "Muito efetiva contra Água/Inseto (3x)", 1000, BallType.NetBall, "#06B6D4");
-        AddShopItem("🏊 Dive Ball", "Muito efetiva debaixo d'água (3.5x)", 1000, BallType.DiveBall, "#0EA5E9");
-        AddShopItem("🌱 Nest Ball", "Melhor contra Pokémon de baixo nível", 1000, BallType.NestBall, "#84CC16");
-        AddShopItem("🔁 Repeat Ball", "Muito efetiva se já capturou (3x)", 1000, BallType.RepeatBall, "#F59E0B");
-        AddShopItem("⏱️ Timer Ball", "Aumenta efetividade com turnos", 1000, BallType.TimerBall, "#6B7280");
-        AddShopItem("💎 Luxury Ball", "Taxa básica mas aumenta amizade", 1000, BallType.LuxuryBall, "#DC2626");
-        AddShopItem("🎁 Premier Ball", "Igual à Poké Ball mas premium (1x)", 200, BallType.PremierBall, "#F87171");
-        AddShopItem("🌙 Dusk Ball", "Muito efetiva à noite/cavernas (3x)", 1000, BallType.DuskBall, "#4338CA");
-        AddShopItem("❤️ Heal Ball", "Taxa básica mas cura o Pokémon", 300, BallType.HealBall, "#EC4899");
-        AddShopItem("⚡ Quick Ball", "Extremamente efetiva no 1º turno (5x)", 1000, BallType.QuickBall, "#EAB308");
-        AddShopItem("💨 Fast Ball", "Muito efetiva contra rápidos (4x)", 300, BallType.FastBall, "#F97316");
-        AddShopItem("📊 Level Ball", "Efetividade baseada em nível", 300, BallType.LevelBall, "#14B8A6");
-        AddShopItem("🎣 Lure Ball", "Muito efetiva contra pescados (4x)", 300, BallType.LureBall, "#3B82F6");
-        AddShopItem("⚖️ Heavy Ball", "Efetividade baseada em peso", 300, BallType.HeavyBall, "#71717A");
-        AddShopItem("💕 Love Ball", "Extremamente efetiva mesmo gênero (8x)", 300, BallType.LoveBall, "#F472B6");
-        AddShopItem("😊 Friend Ball", "Taxa básica mas mais amizade", 300, BallType.FriendBall, "#34D399");
-        AddShopItem("🌕 Moon Ball", "Muito efetiva c/ Pedra Lunar (4x)", 300, BallType.MoonBall, "#8B5CF6");
-        AddShopItem("🏆 Sport Ball", "Taxa melhorada para competições (1.5x)", 300, BallType.SportBall, "#F59E0B");
+        // Obter apenas as pokébolas compráveis do BallDefinition
+        var purchasableBalls = BallDefinition.GetPurchasable();
+
+        foreach (var ball in purchasableBalls)
+        {
+            AddShopItem(ball);
+        }
     }
 
-    private void AddShopItem(string name, string description, int price, BallType ballType, string accentColor)
+    private void AddShopItem(BallDefinition ball)
     {
-        var itemKey = ballType.ToString();
-        
+        // Card estilo GBA
         var card = new Border
         {
-            Background = Brushes.White,
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(20),
-            Margin = new Thickness(0, 0, 0, 16)
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#70C5EC")),
+            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#28546E")),
+            BorderThickness = new Thickness(2),
+            Padding = new Thickness(10),
+            Margin = new Thickness(0, 0, 0, 5)
         };
 
         card.Effect = new System.Windows.Media.Effects.DropShadowEffect
         {
-            BlurRadius = 10,
-            ShadowDepth = 0,
-            Opacity = 0.1,
-            Color = Colors.Black
+            Color = Colors.Black,
+            Opacity = 0.2,
+            BlurRadius = 0,
+            ShadowDepth = 2,
+            Direction = 315
         };
 
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Ícone
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Info
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Botão
 
-        var leftStack = new StackPanel();
-        
-        var titlePanel = new StackPanel { Orientation = Orientation.Horizontal };
-        var titleText = new TextBlock
+        // Ícone da Pokébola
+        var iconText = new TextBlock
         {
-            Text = name,
-            FontSize = 18,
+            Text = ball.Icon,
+            FontSize = 32,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0)
+        };
+        Grid.SetColumn(iconText, 0);
+        grid.Children.Add(iconText);
+
+        // Info do item
+        var infoStack = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var nameText = new TextBlock
+        {
+            FontSize = 15,
             FontWeight = FontWeights.Bold,
-            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1F2937"))
+            Foreground = Brushes.White,
+            Margin = new Thickness(0, 0, 0, 2)
         };
-        titlePanel.Children.Add(titleText);
-
-        leftStack.Children.Add(titlePanel);
-
-        var descText = new TextBlock
+        nameText.Effect = new System.Windows.Media.Effects.DropShadowEffect
         {
-            Text = description,
-            FontSize = 13,
-            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6B7280")),
-            Margin = new Thickness(0, 4, 0, 12),
-            TextWrapping = TextWrapping.Wrap
+            Color = Colors.Black,
+            Opacity = 1,
+            BlurRadius = 0,
+            ShadowDepth = 1,
+            Direction = 315
         };
-        leftStack.Children.Add(descText);
+        nameText.Inlines.Add(new System.Windows.Documents.Run(ball.Name));
+        infoStack.Children.Add(nameText);
+
+        var statsText = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = Brushes.White,
+            Margin = new Thickness(0, 0, 0, 3)
+        };
+        statsText.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            Color = Colors.Black,
+            Opacity = 0.8,
+            BlurRadius = 0,
+            ShadowDepth = 1,
+            Direction = 315
+        };
+        statsText.Inlines.Add(new System.Windows.Documents.Run($"Taxa de captura: {ball.CatchRateMultiplier}x"));
+        infoStack.Children.Add(statsText);
 
         var priceText = new TextBlock
         {
-            FontSize = 24,
+            FontSize = 13,
             FontWeight = FontWeights.Bold,
-            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(accentColor))
+            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFD700"))
         };
-        priceText.Inlines.Add(new System.Windows.Documents.Run($"${price}"));
-        leftStack.Children.Add(priceText);
+        priceText.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            Color = Colors.Black,
+            Opacity = 1,
+            BlurRadius = 0,
+            ShadowDepth = 1,
+            Direction = 315
+        };
+        priceText.Inlines.Add(new System.Windows.Documents.Run($"¥{ball.Price}"));
+        infoStack.Children.Add(priceText);
 
-        Grid.SetColumn(leftStack, 0);
-        grid.Children.Add(leftStack);
+        Grid.SetColumn(infoStack, 1);
+        grid.Children.Add(infoStack);
 
+        // Botão Comprar estilo GBA
         var buyButton = new Button
         {
-            Content = "Comprar",
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(accentColor)),
-            Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(24, 10, 24, 10),
-                FontSize = 14,
-                FontWeight = FontWeights.SemiBold,
-                Cursor = System.Windows.Input.Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center
-            };
+            Content = "💰 COMPRAR",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+            Tag = ball // Store the ball definition in Tag
+        };
+        buyButton.SetResourceReference(Button.StyleProperty, "BuyButton");
+        buyButton.Click += (s, e) => BuyItem(ball.Type, ball.Price);
 
-            var template = new ControlTemplate(typeof(Button));
-            var templateBorder = new FrameworkElementFactory(typeof(Border));
-            templateBorder.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Button.BackgroundProperty));
-            templateBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
-            templateBorder.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Button.PaddingProperty));
-            var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
-            presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-            presenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-            templateBorder.AppendChild(presenter);
-            template.VisualTree = templateBorder;
-            buyButton.Template = template;
-
-            buyButton.Click += (s, e) => BuyItem(itemKey, price);
-            buyButton.MouseEnter += (s, e) =>
-            {
-                var color = (Color)ColorConverter.ConvertFromString(accentColor);
-                buyButton.Background = new SolidColorBrush(Color.FromRgb(
-                    (byte)(color.R * 0.9),
-                    (byte)(color.G * 0.9),
-                    (byte)(color.B * 0.9)
-                ));
-            };
-            buyButton.MouseLeave += (s, e) =>
-            {
-                buyButton.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(accentColor));
-            };
-
-            Grid.SetColumn(buyButton, 1);
-            grid.Children.Add(buyButton);
+        Grid.SetColumn(buyButton, 2);
+        grid.Children.Add(buyButton);
 
         card.Child = grid;
         ItemsPanel.Children.Add(card);
     }
 
-    private void BuyItem(string itemKey, int price)
+    private void BuyItem(BallType ballType, int price)
     {
         if (_state.Money >= price)
         {
             _state.Money -= price;
-            _state.Inventory[itemKey] = _state.Inventory.GetValueOrDefault(itemKey, 0) + 1;
+            _state.Inventory[ballType] = _state.Inventory.GetValueOrDefault(ballType, 0) + 1;
             _onPurchase();
             UpdateUI();
 
-            // Animação de feedback
-            ShowPurchaseSuccess();
+            // Feedback sonoro seria ideal aqui (System.Media.SystemSounds.Beep.Play())
         }
         else
         {
             MessageBox.Show(
                 "Você não tem dinheiro suficiente!",
-                "Fundos Insuficientes",
+                "⚠️ Fundos Insuficientes",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning
             );
         }
-    }
-
-    private void ShowPurchaseSuccess()
-    {
-        var notification = new Border
-        {
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981")),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(16, 12, 16, 12),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 20, 0, 0)
-        };
-
-        var text = new TextBlock
-        {
-            Text = "✓ Item comprado com sucesso!",
-            Foreground = Brushes.White,
-            FontWeight = FontWeights.SemiBold
-        };
-
-        notification.Child = text;
-        
-        // Adicionar ao grid principal temporariamente
-        var mainGrid = (Grid)((Border)Content).Child;
-        mainGrid.Children.Add(notification);
-        Grid.SetRow(notification, 0);
-        Grid.SetRowSpan(notification, 3);
-
-        // Remover após 2 segundos
-        var timer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(2)
-        };
-        timer.Tick += (s, e) =>
-        {
-            mainGrid.Children.Remove(notification);
-            timer.Stop();
-        };
-        timer.Start();
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
