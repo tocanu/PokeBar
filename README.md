@@ -20,9 +20,6 @@ dotnet run
 dotnet publish PokeBar.csproj -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=true -o .\\publish
 ```
 
-## Caminho dos sprites
-Por padrão o app usa `C:\\Users\\Arthur\\Documents\\Projetos\\SpriteCollab\\sprite`. Você pode alterar via variável de ambiente `POKEBAR_SPRITE_ROOT`.
-
 ## Save
 O estado (JSON) fica em `%APPDATA%\\.pokebar\\save.json`.
 
