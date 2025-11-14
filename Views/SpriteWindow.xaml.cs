@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using PokeBar.ViewModels;
 using System.Windows.Interop;
@@ -13,8 +14,7 @@ namespace PokeBar.Views
     {
         private IntPtr _hwnd;
         private MainViewModel? _vm;
-        private bool _isThrowDrag;
-        private System.Windows.Point _dragStart;
+        
         public SpriteWindow()
         {
             InitializeComponent();
@@ -33,6 +33,7 @@ namespace PokeBar.Views
                 _vm = vm;
                 vm.RequestReposition += OnRequestReposition;
                 vm.BattleClashRequested += OnBattleClashRequested;
+                vm.RequestPlayerJump += OnRequestPlayerJump;
             }
         }
 
@@ -42,6 +43,7 @@ namespace PokeBar.Views
             {
                 _vm.RequestReposition -= OnRequestReposition;
                 _vm.BattleClashRequested -= OnBattleClashRequested;
+                _vm.RequestPlayerJump -= OnRequestPlayerJump;
                 _vm = null;
             }
         }
@@ -55,6 +57,25 @@ namespace PokeBar.Views
         private void OnBattleClashRequested(object? sender, EventArgs e)
         {
             PlayClashAnimation();
+        }
+
+        private void OnRequestPlayerJump(object? sender, EventArgs e)
+        {
+            PlayJumpAnimation();
+        }
+
+        private void PlayJumpAnimation()
+        {
+            var jump = new DoubleAnimation
+            {
+                From = 0,
+                To = -12,
+                Duration = TimeSpan.FromMilliseconds(150),
+                AutoReverse = true,
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
+            };
+
+            PlayerTranslate.BeginAnimation(TranslateTransform.YProperty, jump);
         }
 
         private void SpriteWindow_Deactivated(object? sender, EventArgs e)
@@ -73,43 +94,8 @@ namespace PokeBar.Views
 
         private void Window_MouseDown(object sender, MouseButtonEventArgs e)
         {
-            if (_vm == null)
-                return;
-
-            if (_vm.InBattle && _vm.WildVisible)
-            {
-                _isThrowDrag = true;
-                _dragStart = e.GetPosition(this);
-                CaptureMouse();
-            }
-            else
-            {
-                _vm.OnClicked();
-                PlayBounce();
-            }
-        }
-
-        private void Window_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
-        {
-            // reserved for future feedback
-        }
-
-        private void Window_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            if (!_isThrowDrag)
-                return;
-
-            _isThrowDrag = false;
-            ReleaseMouseCapture();
-            if (_vm == null)
-                return;
-            var end = e.GetPosition(this);
-            var drag = end - _dragStart;
-            if (_vm.CanThrowPokeball(new System.Windows.Vector(drag.X, drag.Y)))
-            {
-                AnimatePokeballThrow();
-                _ = _vm.TryThrowPokeball();
-            }
+            _vm?.OnClicked();
+            PlayBounce();
         }
 
         private void PlayBounce()
@@ -137,58 +123,25 @@ namespace PokeBar.Views
                 EasingFunction = easing
             };
             PlayerTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, playerAnim);
-
-            var enemyAnim = new DoubleAnimation
-            {
-                From = 0,
-                To = -18,
-                Duration = TimeSpan.FromMilliseconds(160),
-                AutoReverse = true,
-                EasingFunction = easing
-            };
-            EnemyTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, enemyAnim);
         }
 
-        private void AnimatePokeballThrow()
+        public Rect? GetPlayerScreenBounds() => GetElementScreenBounds(PlayerImage);
+
+        private Rect? GetElementScreenBounds(FrameworkElement element)
         {
-            if (!EnemyImage.IsVisible)
-                return;
-
-            var start = PlayerImage.TranslatePoint(new System.Windows.Point(PlayerImage.ActualWidth / 2, PlayerImage.ActualHeight / 2), FxCanvas);
-            var end = EnemyImage.TranslatePoint(new System.Windows.Point(EnemyImage.ActualWidth / 2, EnemyImage.ActualHeight / 2), FxCanvas);
-            double startLeft = start.X - (PokeballImage.Width / 2);
-            double startTop = start.Y - (PokeballImage.Height / 2);
-            double endLeft = end.X - (PokeballImage.Width / 2);
-            double endTop = end.Y - (PokeballImage.Height / 2);
-
-            PokeballImage.BeginAnimation(Canvas.LeftProperty, null);
-            PokeballImage.BeginAnimation(Canvas.TopProperty, null);
-            Canvas.SetLeft(PokeballImage, startLeft);
-            Canvas.SetTop(PokeballImage, startTop);
-            PokeballImage.Visibility = Visibility.Visible;
-
-            var animX = new DoubleAnimation
+            if (!IsLoaded || element.ActualWidth <= 0 || element.ActualHeight <= 0)
+                return null;
+            try
             {
-                From = startLeft,
-                To = endLeft,
-                Duration = TimeSpan.FromMilliseconds(320),
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-            };
-            var animY = new DoubleAnimation
+                var transform = element.TransformToAncestor(this);
+                var rect = transform.TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+                var topLeft = PointToScreen(new System.Windows.Point(rect.Left, rect.Top));
+                return new Rect(topLeft, new System.Windows.Size(rect.Width, rect.Height));
+            }
+            catch
             {
-                From = startTop,
-                To = endTop,
-                Duration = TimeSpan.FromMilliseconds(320),
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-            };
-            animX.Completed += (_, __) =>
-            {
-                PokeballImage.Visibility = Visibility.Collapsed;
-                PokeballImage.BeginAnimation(Canvas.LeftProperty, null);
-                PokeballImage.BeginAnimation(Canvas.TopProperty, null);
-            };
-            PokeballImage.BeginAnimation(Canvas.LeftProperty, animX);
-            PokeballImage.BeginAnimation(Canvas.TopProperty, animY);
+                return null;
+            }
         }
     }
 }

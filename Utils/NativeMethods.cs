@@ -80,4 +80,15 @@ public static class NativeMethods
     }
 
     public static Rect ToRect(this RECT r) => new(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+    
+    // Window styles
+    public const int GWL_EXSTYLE = -20;
+    public const uint WS_EX_TRANSPARENT = 0x00000020;
+    public const uint WS_EX_LAYERED = 0x00080000;
+    
+    [DllImport("user32.dll")]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    
+    [DllImport("user32.dll")]
+    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 }

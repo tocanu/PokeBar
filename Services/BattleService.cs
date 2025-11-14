@@ -7,19 +7,26 @@ namespace PokeBar.Services;
 public class BattleService
 {
     private readonly GameState _state;
+    private readonly DexService _dexService;
     private readonly Random _rng = new();
     private System.Timers.Timer? _spawnTimer;
     private System.Timers.Timer? _resolveTimer;
+    private System.Timers.Timer? _manualTimer;
     private Pokemon? _activeWild;
+    private bool _awaitingManualCapture;
+    private int _pendingManualMoney;
+    private bool _battleTriggered;
 
-    public BattleService(GameState state)
+    public BattleService(GameState state, DexService dexService)
     {
         _state = state;
+        _dexService = dexService;
     }
 
     public event EventHandler<string>? Notify;
     public event EventHandler<Pokemon>? BattleStarted;
     public event EventHandler<(Pokemon wild, bool won, bool caught, int money)>? BattleFinished;
+    public event EventHandler<Pokemon>? ManualCaptureStarted;
 
     public void Start()
     {
@@ -31,16 +38,30 @@ public class BattleService
 
     private double RandomDelay() => _rng.Next(30, 91) * 1000; // 30-90s
 
+    public void ForceSpawn()
+    {
+        OnSpawn();
+    }
+
     private void OnSpawn()
     {
         if (_activeWild != null)
             return;
 
-        var wild = CreateCharizard();
+        var wild = _dexService.CreateRandomPokemon(_rng);
         _activeWild = wild;
+        _battleTriggered = false;
         var msg = $"Um {wild.Name} selvagem apareceu!";
         Notify?.Invoke(this, msg);
         BattleStarted?.Invoke(this, wild.Clone());
+    }
+
+    public void TriggerBattleResolution()
+    {
+        if (_battleTriggered || _activeWild == null)
+            return;
+            
+        _battleTriggered = true;
         ScheduleResolve();
     }
 
@@ -48,8 +69,10 @@ public class BattleService
     {
         _resolveTimer?.Stop();
         _resolveTimer?.Dispose();
-        _resolveTimer = new System.Timers.Timer(5500);
-        _resolveTimer.AutoReset = false;
+        _resolveTimer = new System.Timers.Timer(5500)
+        {
+            AutoReset = false
+        };
         _resolveTimer.Elapsed += (_, __) => ResolvePendingBattle();
         _resolveTimer.Start();
     }
@@ -63,11 +86,31 @@ public class BattleService
         var player = (_state.Active ?? _state.Party.FirstOrDefault())?.Clone() ?? new Pokemon();
         player.HealFull();
         var result = ResolveBattle(player, wild.Clone());
-        CompleteBattle(wild, result.won, result.caught, result.money);
+        if (result.won && !result.caught)
+        {
+            BeginManualCapture(wild, result.money);
+        }
+        else
+        {
+            CompleteBattle(wild, result.won, result.caught, result.money);
+        }
     }
 
     private (bool won, bool caught, int money) ResolveBattle(Pokemon player, Pokemon wild)
     {
+        LogToFile($"[ResolveBattle] Iniciando batalha:");
+        LogToFile($"  Player: {player.Name} Lv.{player.Level} HP:{player.CurrentHP}/{player.MaxHP} Atk:{player.Attack} Def:{player.Defense} Spd:{player.Speed}");
+        LogToFile($"  Wild: {wild.Name} Lv.{wild.Level} HP:{wild.CurrentHP}/{wild.MaxHP} Atk:{wild.Attack} Def:{wild.Defense} Spd:{wild.Speed}");
+        LogToFile($"  God Mode: {_state.GodMode}");
+        
+        // God Mode: vitória instantânea
+        if (_state.GodMode)
+        {
+            LogToFile("[ResolveBattle] God Mode ativo - vitória automática!");
+            wild.CurrentHP = 0;
+            return (won: true, caught: false, money: 50);
+        }
+        
         bool playerFirst = player.Speed >= wild.Speed;
         int turns = 0;
 
@@ -93,10 +136,15 @@ public class BattleService
         bool caught = false;
         int money = 0;
 
+        LogToFile($"[ResolveBattle] Fim da batalha após {turns} turnos:");
+        LogToFile($"  Player HP: {player.CurrentHP}/{player.MaxHP}");
+        LogToFile($"  Wild HP: {wild.CurrentHP}/{wild.MaxHP}");
+        LogToFile($"  Resultado: won={won}");
+
         if (won)
         {
             money = _rng.Next(12, 40);
-            caught = _rng.NextDouble() < 0.25;
+            caught = false;
         }
         else if (player.CurrentHP > 0 && wild.CurrentHP < wild.MaxHP / 3)
         {
@@ -120,27 +168,34 @@ public class BattleService
         if (wild == null)
             return false;
 
-        double chance = 0.45;
-        var player = _state.Active;
-        if (player != null)
+        if (_awaitingManualCapture)
         {
-            chance += Math.Clamp((player.Level - wild.Level) * 0.02, -0.2, 0.2);
+            double chance = 0.60;
+            var player = _state.Active;
+            if (player != null)
+            {
+                chance += Math.Clamp((player.Level - wild.Level) * 0.03, -0.25, 0.25);
+            }
+            chance = Math.Clamp(chance, 0.25, 0.95);
+            bool success = _rng.NextDouble() < chance;
+            if (!success)
+            {
+                Notify?.Invoke(this, $"{wild.Name} escapou da Pokebola!");
+            }
+            CompleteBattle(wild, won: true, caught: success, money: _pendingManualMoney);
+            return success;
         }
-        chance = Math.Clamp(chance, 0.15, 0.85);
-        bool success = _rng.NextDouble() < chance;
-        if (success)
-        {
-            CompleteBattle(wild, won: true, caught: true, money: _rng.Next(6, 14));
-        }
-        else
-        {
-            Notify?.Invoke(this, $"{wild.Name} escapou da Pokébola!");
-        }
-        return success;
+
+        return false;
     }
 
     private void CompleteBattle(Pokemon wild, bool won, bool caught, int money)
     {
+        _awaitingManualCapture = false;
+        _pendingManualMoney = 0;
+        _manualTimer?.Stop();
+        _manualTimer?.Dispose();
+        _manualTimer = null;
         _activeWild = null;
         _resolveTimer?.Stop();
         _resolveTimer?.Dispose();
@@ -152,29 +207,44 @@ public class BattleService
         BattleFinished?.Invoke(this, (wild, won, caught, money));
     }
 
-    private Pokemon CreateCharizard()
+    private void BeginManualCapture(Pokemon wild, int money)
     {
-        int level = _rng.Next(20, 41);
-        int hp = 120 + _rng.Next(-10, 21);
-        int attack = 95 + _rng.Next(-5, 15);
-        int defense = 80 + _rng.Next(-10, 10);
-        int speed = 100 + _rng.Next(-10, 10);
-
-        hp = Math.Max(1, hp);
-        attack = Math.Max(1, attack);
-        defense = Math.Max(1, defense);
-        speed = Math.Max(1, speed);
-
-        return new Pokemon
+        _awaitingManualCapture = true;
+        _pendingManualMoney = money;
+        ManualCaptureStarted?.Invoke(this, wild.Clone());
+        Notify?.Invoke(this, $"{wild.Name} ficou atordoado! Lance uma Pokebola!");
+        _manualTimer?.Stop();
+        _manualTimer?.Dispose();
+        _manualTimer = new System.Timers.Timer(12000)
         {
-            Name = "Charizard",
-            DexNumber = 6,
-            Level = level,
-            MaxHP = hp,
-            CurrentHP = hp,
-            Attack = attack,
-            Defense = defense,
-            Speed = speed,
+            AutoReset = false
         };
+        _manualTimer.Elapsed += ManualTimerElapsed;
+        _manualTimer.Start();
+    }
+
+    private void ManualTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        var wild = _activeWild;
+        if (wild == null)
+            return;
+        CompleteBattle(wild, won: true, caught: false, money: _pendingManualMoney);
+    }
+
+    private void LogToFile(string message)
+    {
+        try
+        {
+            var logPath = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                "pokebar_debug.txt"
+            );
+            var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            System.IO.File.AppendAllText(logPath, $"[{timestamp}] {message}\n");
+        }
+        catch { /* Ignorar erros de log */ }
     }
 }
+
+
+

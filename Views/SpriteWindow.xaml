@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="PokéBar"
-        Width="128" Height="56"
+        Width="64" Height="96"
         WindowStyle="None" AllowsTransparency="True"
         Background="Transparent"
         Topmost="True" ShowInTaskbar="False"
@@ -13,9 +13,7 @@
         Focusable="False"
         SnapsToDevicePixels="True"
         UseLayoutRounding="True"
-        MouseDown="Window_MouseDown"
-        MouseMove="Window_MouseMove"
-        MouseLeftButtonUp="Window_MouseLeftButtonUp">
+        MouseDown="Window_MouseDown">
     <Window.Resources>
         <DrawingImage x:Key="PokeballSprite">
             <DrawingImage.Drawing>
@@ -72,10 +70,6 @@
         <Grid.RenderTransform>
             <ScaleTransform x:Name="BounceScale" ScaleX="1" ScaleY="1"/>
         </Grid.RenderTransform>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
 
         <Image x:Name="PlayerImage"
                Source="{Binding CurrentFrame}"
@@ -85,39 +79,16 @@
             <Image.RenderTransform>
                 <TransformGroup>
                     <ScaleTransform/>
-                    <TranslateTransform x:Name="PlayerTranslate"/>
+                    <TranslateTransform x:Name="PlayerTranslate" Y="{Binding PlayerVerticalOffset}"/>
                 </TransformGroup>
             </Image.RenderTransform>
         </Image>
 
-        <Image x:Name="EnemyImage"
-               Grid.Column="1"
-               Source="{Binding WildCurrentFrame}"
-               Stretch="None"
-               HorizontalAlignment="Center"
-               VerticalAlignment="Bottom"
-               Visibility="{Binding WildVisible, Converter={StaticResource BoolToVis}}">
-            <Image.RenderTransform>
-                <TransformGroup>
-                    <ScaleTransform/>
-                    <TranslateTransform x:Name="EnemyTranslate"/>
-                </TransformGroup>
-            </Image.RenderTransform>
-        </Image>
-
-        <Border Grid.ColumnSpan="2"
-                Background="#CC000000" CornerRadius="6"
+        <Border Background="#CC000000" CornerRadius="6"
                 Padding="6" HorizontalAlignment="Center"
                 VerticalAlignment="Top" Margin="0, -2, 0, 0"
                 Visibility="{Binding BubbleVisible, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="{Binding BubbleText}" Foreground="White" FontSize="12"/>
         </Border>
-
-        <Canvas x:Name="FxCanvas" Grid.ColumnSpan="2" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False">
-            <Image x:Name="PokeballImage"
-                   Width="16" Height="16"
-                   Source="{StaticResource PokeballSprite}"
-                   Visibility="Collapsed"/>
-        </Canvas>
     </Grid>
 </Window>

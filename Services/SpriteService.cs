@@ -32,7 +32,10 @@ public class SpriteService
         var sleepRight = sleepRightRaw.Count > 0 ? sleepRightRaw : idleRight;
         var sleepLeft = sleepLeftRaw.Count > 0 ? sleepLeftRaw : idleLeft;
 
-        return new SpriteAnimationSet(walkRight, walkLeft, idleRight, idleLeft, sleepRight, sleepLeft);
+        // Calcular offset vertical baseado no primeiro frame de walk
+        double verticalOffset = CalculateVerticalOffset(walkRight.Count > 0 ? walkRight[0] : null);
+
+        return new SpriteAnimationSet(walkRight, walkLeft, idleRight, idleLeft, sleepRight, sleepLeft, verticalOffset);
     }
 
     public (IReadOnlyList<ImageSource> right, IReadOnlyList<ImageSource> left) LoadWalkFrames(int dexNumber)
@@ -42,7 +45,26 @@ public class SpriteService
         var walk = Path.Combine(folder, "Walk-Anim.png");
         if (File.Exists(walk))
         {
-            return FromPMDSheetAuto(walk, rightRow1Based: 3, leftRow1Based: 7);
+            // PMD: row 3 = right facing, row 7 = left facing
+            // Mas vamos inverter se necessário
+            var (row3Frames, row7Frames) = FromPMDSheetAuto(walk, rightRow1Based: 3, leftRow1Based: 7);
+            
+            // Se ambos existem, usa direto
+            if (row3Frames.Count > 0 && row7Frames.Count > 0)
+            {
+                return (row3Frames, row7Frames);
+            }
+            
+            // Se só tem uma direção, espelha para a outra
+            if (row3Frames.Count > 0)
+            {
+                return (row3Frames, MirrorFrames(row3Frames));
+            }
+            
+            if (row7Frames.Count > 0)
+            {
+                return (MirrorFrames(row7Frames), row7Frames);
+            }
         }
 
         // fallback: look for frames in assets/sprites/name/*.png like left/right_*.png
@@ -50,7 +72,8 @@ public class SpriteService
         if (files.Length > 0)
         {
             var imgs = files.Select(f => (ImageSource)new BitmapImage(new Uri(f))).ToList();
-            return (imgs, imgs);
+            var mirrored = MirrorFrames(imgs);
+            return (imgs, mirrored);
         }
 
         // Solid color fallback
@@ -277,5 +300,52 @@ public class SpriteService
         rtb.Render(dv);
         rtb.Freeze();
         return new[] { (ImageSource)rtb };
+    }
+
+    private static double CalculateVerticalOffset(ImageSource? sprite)
+    {
+        if (sprite is not BitmapSource bmp)
+            return 0;
+
+        try
+        {
+            var converted = new FormatConvertedBitmap(bmp, PixelFormats.Pbgra32, null, 0);
+            int width = converted.PixelWidth;
+            int height = converted.PixelHeight;
+            int stride = width * 4;
+            var pixels = new byte[stride * height];
+            converted.CopyPixels(pixels, stride, 0);
+
+            // Encontrar última linha com pixels não transparentes (a base real do sprite)
+            int lastVisibleY = height - 1;
+            for (int y = height - 1; y >= 0; y--)
+            {
+                bool hasPixel = false;
+                for (int x = 0; x < width; x++)
+                {
+                    int alphaIndex = (y * stride) + (x * 4) + 3;
+                    if (pixels[alphaIndex] > 0)
+                    {
+                        hasPixel = true;
+                        break;
+                    }
+                }
+                if (hasPixel)
+                {
+                    lastVisibleY = y;
+                    break;
+                }
+            }
+
+            // Retorna quantos pixels transparentes tem na parte inferior
+            // Se o sprite vai até y=70 em uma imagem de 96px, tem 25px de padding inferior
+            return height - lastVisibleY - 1;
+        }
+        catch
+        {
+            // Se falhar, retorna 0
+        }
+
+        return 0;
     }
 }

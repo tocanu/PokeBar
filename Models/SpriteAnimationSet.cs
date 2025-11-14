@@ -9,4 +9,5 @@ public record SpriteAnimationSet(
     IReadOnlyList<ImageSource> IdleRight,
     IReadOnlyList<ImageSource> IdleLeft,
     IReadOnlyList<ImageSource> SleepRight,
-    IReadOnlyList<ImageSource> SleepLeft);
+    IReadOnlyList<ImageSource> SleepLeft,
+    double VerticalOffset = 0); // Pixels transparentes do topo para ajustar alinhamento

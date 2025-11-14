@@ -1,0 +1,84 @@
+<Window x:Class="PokeBar.Views.WildSpriteWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WildPokemon"
+        Width="64" Height="96"
+        WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True" ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Focusable="False"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- Desenho vetorial da pokebola (padrão) -->
+        <DrawingImage x:Key="PokeballSprite">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <!-- Círculo de fundo branco -->
+                    <GeometryDrawing Brush="White">
+                        <GeometryDrawing.Geometry>
+                            <EllipseGeometry Center="12,12" RadiusX="11" RadiusY="11"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- Metade superior vermelha -->
+                    <GeometryDrawing Brush="Red">
+                        <GeometryDrawing.Geometry>
+                            <PathGeometry>
+                                <PathFigure StartPoint="1,12" IsClosed="True">
+                                    <LineSegment Point="1,12"/>
+                                    <ArcSegment Point="23,12" Size="11,11" SweepDirection="Clockwise"/>
+                                    <LineSegment Point="1,12"/>
+                                </PathFigure>
+                            </PathGeometry>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- Faixa preta central -->
+                    <GeometryDrawing Brush="Black">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="1,10.5,22,3"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- Botão central branco -->
+                    <GeometryDrawing Brush="White">
+                        <GeometryDrawing.Geometry>
+                            <EllipseGeometry Center="12,12" RadiusX="3.5" RadiusY="3.5"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- Contorno do botão -->
+                    <GeometryDrawing>
+                        <GeometryDrawing.Geometry>
+                            <EllipseGeometry Center="12,12" RadiusX="3.5" RadiusY="3.5"/>
+                        </GeometryDrawing.Geometry>
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="Black" Thickness="0.8"/>
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <!-- Contorno externo da bola -->
+                    <GeometryDrawing>
+                        <GeometryDrawing.Geometry>
+                            <EllipseGeometry Center="12,12" RadiusX="11" RadiusY="11"/>
+                        </GeometryDrawing.Geometry>
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="Black" Thickness="1"/>
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+    </Window.Resources>
+    <Grid RenderOptions.BitmapScalingMode="NearestNeighbor" 
+          MouseLeftButtonDown="Grid_MouseLeftButtonDown"
+          Background="Transparent">
+        <Image x:Name="WildImage"
+               Source="{Binding WildCurrentFrame}"
+               Stretch="None"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Bottom">
+            <Image.RenderTransform>
+                <TranslateTransform Y="{Binding WildVerticalOffset}"/>
+            </Image.RenderTransform>
+        </Image>
+    </Grid>
+</Window>
